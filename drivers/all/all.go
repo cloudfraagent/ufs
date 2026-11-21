@@ -25,6 +25,7 @@
 //   - bolt: from [github.com/cloudfra/ufs/drivers/boltfs]
 //   - gs:// from [github.com/cloudfra/ufs/drivers/gcsfs]
 //   - URIs ending in .git from [github.com/cloudfra/ufs/drivers/gitfs]
+//   - yaml: from [github.com/cloudfra/ufs/drivers/internal/yamlfs]
 //
 // and these decorators, which a mount selects by name in its options:
 //
@@ -52,4 +53,5 @@ import (
 	_ "github.com/cloudfra/ufs/drivers/decorators/telemetryfs" // registers the telemetry mount option
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"                  // registers gs://
 	_ "github.com/cloudfra/ufs/drivers/gitfs"                  // registers git repository URIs
+	_ "github.com/cloudfra/ufs/drivers/internal/yamlfs"        // registers yaml:
 )

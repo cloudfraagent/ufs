@@ -61,15 +61,16 @@ func New(ctx context.Context, name string) (types.WriteFS, error)
 
 Dispatches to the appropriate implementation based on URI scheme:
 
-| Scheme      | Implementation  | Struct    | Type | Status | Behavior                                                                                                                                                                                                     |
-| :---------- | :-------------- | :-------- | :--- | :----- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| null://     | drivers/core/   | nullFS    | ro   | Impl.  | /dev/null — writes discarded, reads return empty                                                                                                                                                             |
-| memory:     | drivers/core/   | memFS     | rw   | Impl.  | In-memory storage; lost when process exits                                                                                                                                                                   |
-| file:///... | drivers/core/   | localFS   | rw   | Impl.  | Local disk via os.OpenRoot; rejects paths outside root                                                                                                                                                       |
-| gs://...    | drivers/gcsfs/  | gcsFS     | rw   | Impl.  | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs)                                                                                                                                     |
-| git://...   | drivers/gitfs/  | --        | rw   | Impl.  | Contents of a git repo (clones on first open; writes go to the temporary clone; blank-import drivers/gitfs)                                                                                                  |
-| archive://  | drivers/core/   | archiveFS | ro   | Impl.  | Reads archives (zip, tar, 7z) as virtual FSs                                                                                                                                                                 |
-| bolt:...    | drivers/boltfs/ | boltFS    | rw   | Impl.  | Single BoltDB file; registered by importing the package; `ufs.nosync`, `ufs.nofreelistsync`, `ufs.nostatistics`, `ufs.readonly`, `ufs.timeout` query params set bolt.Options (parsed with httputil.ParseURI) |
+| Scheme      | Implementation           | Struct    | Type | Status | Behavior                                                                                                                                                                                                     |
+| :---------- | :----------------------- | :-------- | :--- | :----- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| null://     | drivers/core/            | nullFS    | ro   | Impl.  | /dev/null — writes discarded, reads return empty                                                                                                                                                             |
+| memory:     | drivers/core/            | memFS     | rw   | Impl.  | In-memory storage; lost when process exits                                                                                                                                                                   |
+| file:///... | drivers/core/            | localFS   | rw   | Impl.  | Local disk via os.OpenRoot; rejects paths outside root                                                                                                                                                       |
+| gs://...    | drivers/gcsfs/           | gcsFS     | rw   | Impl.  | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs)                                                                                                                                     |
+| git://...   | drivers/gitfs/           | --        | rw   | Impl.  | Contents of a git repo (clones on first open; writes go to the temporary clone; blank-import drivers/gitfs)                                                                                                  |
+| archive://  | drivers/core/            | archiveFS | ro   | Impl.  | Reads archives (zip, tar, 7z) as virtual FSs                                                                                                                                                                 |
+| bolt:...    | drivers/boltfs/          | boltFS    | rw   | Impl.  | Single BoltDB file; registered by importing the package; `ufs.nosync`, `ufs.nofreelistsync`, `ufs.nostatistics`, `ufs.readonly`, `ufs.timeout` query params set bolt.Options (parsed with httputil.ParseURI) |
+| yaml:...    | drivers/internal/yamlfs/ | yamlFS    | ro   | Impl.  | YAML or JSON document as a virtual FS (keys are entries, every write fails with fs.ErrPermission); registered by importing the package                                                                       |
 
 ### Layering / nesting
 
@@ -185,6 +186,7 @@ enable its scheme. They may use `internal/` packages.
 | drivers/embedfs/           | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration)                                                      |
 | drivers/gcsfs/             | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient                                                                     |
 | drivers/gitfs/             | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1                           |
+| drivers/internal/yamlfs/   | yaml: driver over one YAML or JSON document (read-only); registers yaml: on import. yamlfs.New builds a file system from document bytes                 |
 | drivers/polyfills/         | Best-effort standins for optional interfaces a file system lacks; used by the base package, so it must not import ufs                                   |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it                                                                 |
 

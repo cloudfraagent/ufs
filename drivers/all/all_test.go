@@ -20,6 +20,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -69,6 +70,56 @@ func TestBoltDriverRegistered(t *testing.T) {
 	}
 	if string(got) != want {
 		t.Errorf("ReadFile(%q) = %q, want %q", name, got, want)
+	}
+}
+
+// TestYamlDriverRegistered opens a document through the yaml: scheme and checks
+// that the URI its file system reports opens the same document.
+func TestYamlDriverRegistered(t *testing.T) {
+	const document = "name: ufs\nserver:\n  host: localhost\n"
+	docPath := filepath.Join(t.TempDir(), "document.yaml")
+	if err := os.WriteFile(docPath, []byte(document), 0o600); err != nil {
+		t.Fatalf("WriteFile(%q) = %v, want nil", docPath, err)
+	}
+	uri := "yaml:" + docPath
+	fsys, err := ufs.New(t.Context(), uri)
+	if err != nil {
+		t.Fatalf("ufs.New(%q) = %v, want nil", uri, err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{"name", "ufs"},
+		{"server/host", "localhost"},
+	} {
+		got, err := fs.ReadFile(fsys, tc.path)
+		if err != nil {
+			t.Errorf("ReadFile(%q) = %v, want nil", tc.path, err)
+			continue
+		}
+		if string(got) != tc.want {
+			t.Errorf("ReadFile(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+
+	u, err := fsys.URI()
+	if err != nil {
+		t.Fatalf("URI() = %v, want nil", err)
+	}
+	reopened, err := ufs.New(t.Context(), u.String())
+	if err != nil {
+		t.Fatalf("ufs.New(%q) = %v, want nil", u.String(), err)
+	}
+	defer ufsTesting.ValidateClose(t, reopened)()
+
+	got, err := fs.ReadFile(reopened, "server/host")
+	if err != nil {
+		t.Errorf("ReadFile(%q) on the reopened file system = %v, want nil", "server/host", err)
+	} else if string(got) != "localhost" {
+		t.Errorf("ReadFile(%q) on the reopened file system = %q, want %q", "server/host", got, "localhost")
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 const document = `
@@ -559,6 +561,59 @@ func TestNewErrors(t *testing.T) {
 				t.Errorf("New() returned a file system with an error, want nil")
 			}
 		})
+	}
+}
+
+// TestNewYamlFS opens a document file through the yaml: driver. A URI cannot
+// carry the document, so its path names the local file that holds it, and its
+// query selects nothing.
+func TestNewYamlFS(t *testing.T) {
+	t.Parallel()
+	docPath := filepath.Join(t.TempDir(), "document.yaml")
+	if err := os.WriteFile(docPath, []byte(document), 0o600); err != nil {
+		t.Fatalf("WriteFile(%q) = %v, want nil", docPath, err)
+	}
+	// The driver coerces the path once, so the file system and its URI report
+	// it in the same form.
+	wantPath := pathutil.CoerceUnix(docPath)
+
+	for _, uri := range []string{yamlFSPrefix + docPath, yamlFSPrefix + docPath + "?ro=true"} {
+		fsys, err := newYamlFS(t.Context(), uri)
+		if err != nil {
+			t.Fatalf("newYamlFS(%q) = %v, want nil", uri, err)
+		}
+		for _, tc := range []struct {
+			path string
+			want string
+		}{
+			{"name", "ufs"},
+			{"server/host", "localhost"},
+		} {
+			got, err := fsys.ReadFile(tc.path)
+			if err != nil {
+				t.Errorf("newYamlFS(%q).ReadFile(%q) = %v, want nil", uri, tc.path, err)
+			} else if string(got) != tc.want {
+				t.Errorf("newYamlFS(%q).ReadFile(%q) = %q, want %q", uri, tc.path, got, tc.want)
+			}
+		}
+		// The URI names the document, so that ufs.New opens the URI the file
+		// system reports.
+		u, err := fsys.URI()
+		if err != nil {
+			t.Errorf("newYamlFS(%q).URI() = %v, want nil", uri, err)
+		} else if want := wantPath + "?ro=true"; !strings.HasSuffix(u.String(), want) {
+			t.Errorf("newYamlFS(%q).URI() = %q, want it to end with %q", uri, u.String(), want)
+		}
+		if err := fsys.Close(); err != nil {
+			t.Errorf("newYamlFS(%q).Close() = %v, want nil", uri, err)
+		}
+	}
+
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	if _, err := newYamlFS(t.Context(), yamlFSPrefix+missing); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("newYamlFS(missing file) = %v, want fs.ErrNotExist", err)
+	} else if want := pathutil.CoerceUnix(missing); !strings.Contains(err.Error(), want) {
+		t.Errorf("newYamlFS(missing file) = %v, want it to name %q", err, want)
 	}
 }
 

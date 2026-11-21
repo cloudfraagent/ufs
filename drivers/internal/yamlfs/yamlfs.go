@@ -23,21 +23,30 @@
 // operation is safe for concurrent use. Entries report no modification time
 // and the read-only modes of an embedded file. Every write operation fails
 // with [fs.ErrPermission].
+//
+// Importing the package for its side effect registers the "yaml:" driver, which
+// reads the document from a local file, so that [github.com/cloudfra/ufs.New]
+// accepts its URIs:
+//
+//	fsys, err := ufs.New(ctx, "yaml:/path/to/document.yaml")
 package yamlfs
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -48,6 +57,11 @@ var (
 )
 
 const (
+	// yamlFSScheme and yamlFSPrefix are the scheme of the driver this package
+	// registers and the prefix its URIs start with.
+	yamlFSScheme = "yaml"
+	yamlFSPrefix = yamlFSScheme + ":"
+
 	// fileMode and dirMode are the modes of every entry, which is what an
 	// embedded file system reports for content it cannot change.
 	fileMode = fs.FileMode(0o444)
@@ -57,6 +71,14 @@ const (
 // documentModTime is the modification time of every entry, because a document
 // in memory has no modification time to report.
 var documentModTime = time.Time{}
+
+func isYamlFSUri(name string) bool {
+	return strings.HasPrefix(name, yamlFSPrefix)
+}
+
+func init() {
+	ufs.Register(ufs.NewDriver(yamlFSScheme, newYamlFS, isYamlFSUri, 1, true, false))
+}
 
 // errIsDir and errNotDir label the directory mistakes of an operation. They
 // stay private until issue #548 decides which sentinel these errors present.
@@ -81,12 +103,41 @@ func New(name string, data []byte) (types.WriteFS, error) {
 	return &yamlFS{name: name, root: root}, nil
 }
 
+// newYamlFS opens the yaml: URI in name, whose path names the local file that
+// holds the document. A URI cannot carry the document itself, so the bytes must
+// come from that file.
+func newYamlFS(_ context.Context, name string) (types.WriteFS, error) {
+	p, ok := strings.CutPrefix(name, yamlFSPrefix)
+	if !ok {
+		return nil, fmt.Errorf("%q does not contain the scheme, %q", name, yamlFSPrefix)
+	}
+	p, _, _ = strings.Cut(p, "?")
+	// The path is coerced once, so that the file system and its URI report it
+	// in the same form.
+	p = pathutil.CoerceUnix(p)
+	// yaml:///abs/path (the form URI returns) has an empty authority.
+	p = strings.TrimPrefix(p, "//")
+	data, err := osutil.ReadFile(p)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the document %q, %w", p, err)
+	}
+	return New(p, data)
+}
+
 func (fsys *yamlFS) DeviceInfo() types.DeviceMap {
 	return types.NewDeviceMap(types.NewDeviceInfo(fsys.name, "memory", 1, false))
 }
 
 func (fsys *yamlFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: "yaml", Path: "/" + fsys.name, RawQuery: "ro=true"}, nil
+	// One leading slash keeps the path absolute, so that a document named by an
+	// absolute path yields a URI that ufs.New opens again. A Windows path is the
+	// exception: its volume name must stay first.
+	name := strings.TrimPrefix(fsys.name, "/")
+	uriPath := "/" + name
+	if filepath.VolumeName(name) != "" {
+		uriPath = name
+	}
+	return &url.URL{Scheme: yamlFSScheme, Path: uriPath, RawQuery: "ro=true"}, nil
 }
 
 // IsSame reports whether other is this file system. New builds a tree from the
